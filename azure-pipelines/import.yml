@@ -1,0 +1,177 @@
+# IMPORT - adopt an existing vSphere cluster and everything managed for it:
+# the compute cluster (including vSAN), the distributed switch, its port groups
+# and the VMs. The real vCenter object paths come from the per-cluster
+# imports/cluster.json, imports/networks.json and imports/machines.json files.
+#
+# Import is idempotent: addresses already present in state are skipped. Failed
+# imports are reported as warnings so one bad path does not stop the rest.
+# After importing, review the plan output and update the config JSON files to
+# match reality before running create.yml.
+
+name: Import - ${{ parameters.clusterName }} - $(Build.BuildId)
+
+trigger: none
+pr: none
+
+parameters:
+  - name: clusterName
+    type: string
+    default: CLUSTER-PROD-01
+  - name: cloud
+    type: string
+    default: aws
+    values:
+      - aws
+      - azure
+  - name: importCluster
+    type: boolean
+    default: true
+  - name: importNetworks
+    type: boolean
+    default: true
+  - name: importVms
+    type: boolean
+    default: true
+  - name: dryRun
+    type: boolean
+    default: false
+
+variables:
+  - group: terraform-backend
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Import
+    displayName: Import ${{ parameters.clusterName }}
+    jobs:
+      - job: ImportExisting
+        displayName: Import existing vSphere resources
+        steps:
+          - template: templates/terraform-init.yml
+            parameters:
+              clusterName: ${{ parameters.clusterName }}
+              cloud: ${{ parameters.cloud }}
+
+          - script: |
+              set -euo pipefail
+
+              # Normalise Azure DevOps boolean parameters to 0/1.
+              norm() { [ "${1,,}" = "true" ] && echo 1 || echo 0; }
+              DO_CLUSTER=$(norm '${{ parameters.importCluster }}')
+              DO_NETWORKS=$(norm '${{ parameters.importNetworks }}')
+              DO_VMS=$(norm '${{ parameters.importVms }}')
+              DRY=$(norm '${{ parameters.dryRun }}')
+
+              DC=$(jq -r '.datacenter_name' '$(Build.SourcesDirectory)/globals.json')
+              CREATE_NETWORKS=$(jq -r '.create_networks // true' cluster.json)
+              IMPORT_DIR='imports'
+
+              if [ ! -d "$IMPORT_DIR" ]; then
+                echo "##vso[task.logissue type=error]Missing $IMPORT_DIR/ in this cluster folder. Copy it from another cluster and edit the real vCenter object paths."
+                exit 1
+              fi
+
+              echo "=== Import plan for $(jq -r '.name' cluster.json) (datacenter: $DC) ==="
+              if [ "$DRY" -eq 1 ]; then
+                echo "DRY RUN - no state will be changed."
+              fi
+
+              # {datacenter} keeps the JSON files independent of DATACENTER_NAME;
+              # fully literal paths are also accepted.
+              expand_path() {
+                printf '%s' "${1//\{datacenter\}/$DC}"
+              }
+
+              import_resource() {
+                local address="$1"
+                local object_path
+                object_path=$(expand_path "$2")
+
+                if terraform state list "$address" >/dev/null 2>&1; then
+                  echo "SKIP (already in state): $address"
+                  return 0
+                fi
+                if [ "$DRY" -eq 1 ]; then
+                  echo "WOULD IMPORT: $address <- $object_path"
+                  return 0
+                fi
+
+                echo "IMPORT: $address <- $object_path"
+                if terraform import -input=false -no-color "$address" "$object_path"; then
+                  echo "  OK: $address"
+                else
+                  echo "##vso[task.logissue type=warning]Failed to import $address from $object_path. Check the object path and that the resource exists."
+                fi
+              }
+
+              if [ "$DO_CLUSTER" -eq 1 ]; then
+                if [ -f "$IMPORT_DIR/cluster.json" ]; then
+                  echo "--- Compute cluster (vSAN is imported with it) ---"
+                  ADDR=$(jq -r '.resource // "vsphere_compute_cluster.this"' "$IMPORT_DIR/cluster.json")
+                  PATH_VALUE=$(jq -r '.path // empty' "$IMPORT_DIR/cluster.json")
+                  if [ -n "$PATH_VALUE" ]; then
+                    import_resource "$ADDR" "$PATH_VALUE"
+                  else
+                    echo "##vso[task.logissue type=warning]imports/cluster.json has no path; skipping."
+                  fi
+                  echo "NOTE: vSAN settings, disk groups, fault domains and stretched-cluster"
+                  echo "      configuration are properties of vsphere_compute_cluster.this, so"
+                  echo "      they are adopted together with the cluster - no separate import."
+                else
+                  echo "##vso[task.logissue type=warning]imports/cluster.json not found; skipping cluster import."
+                fi
+              fi
+
+              if [ "$DO_NETWORKS" -eq 1 ]; then
+                if [ "$CREATE_NETWORKS" != "true" ]; then
+                  echo "--- Networks skipped: create_networks is false (existing networks are data sources) ---"
+                elif [ -f "$IMPORT_DIR/networks.json" ]; then
+                  echo "--- Distributed switch and port groups ---"
+                  VDS_ADDR=$(jq -r '.vds.resource // "vsphere_distributed_virtual_switch.this[0]"' "$IMPORT_DIR/networks.json")
+                  VDS_PATH=$(jq -r '.vds.path // empty' "$IMPORT_DIR/networks.json")
+                  if [ -n "$VDS_PATH" ]; then
+                    import_resource "$VDS_ADDR" "$VDS_PATH"
+                  else
+                    echo "##vso[task.logissue type=warning]imports/networks.json has no vds.path; skipping VDS import."
+                  fi
+
+                  jq -r '.port_groups[]? | [.resource, .path] | @tsv' "$IMPORT_DIR/networks.json" |
+                  while IFS=$'\t' read -r addr path; do
+                    [ -n "$path" ] || continue
+                    import_resource "$addr" "$path"
+                  done
+                else
+                  echo "##vso[task.logissue type=warning]imports/networks.json not found; skipping network imports."
+                fi
+              fi
+
+              if [ "$DO_VMS" -eq 1 ]; then
+                if [ -f "$IMPORT_DIR/machines.json" ]; then
+                  echo "--- Virtual machines ---"
+                  jq -r '.machines[]? | [.resource, .path] | @tsv' "$IMPORT_DIR/machines.json" |
+                  while IFS=$'\t' read -r addr path; do
+                    [ -n "$path" ] || continue
+                    import_resource "$addr" "$path"
+                  done
+                else
+                  echo "##vso[task.logissue type=warning]imports/machines.json not found; skipping VM imports."
+                fi
+              fi
+
+              echo "--- Resources currently in state ---"
+              terraform state list
+            displayName: Import cluster, networks, vSAN and VMs
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)
+
+          - script: |
+              set -euo pipefail
+              echo "=== Plan after import (expected drift: update JSON to match reality) ==="
+              terraform plan -input=false -no-color
+            displayName: Post-import plan (review drift)
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)

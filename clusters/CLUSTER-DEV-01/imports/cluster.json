@@ -1,0 +1,5 @@
+{
+  "resource": "vsphere_compute_cluster.this",
+  "path": "/{datacenter}/host/Compute/CLUSTER-DEV-01",
+  "notes": "Full vCenter inventory path of the existing compute cluster. {datacenter} is replaced with DATACENTER_NAME from globals.json at runtime. This cluster has vSAN disabled, so no vSAN settings are imported."
+}

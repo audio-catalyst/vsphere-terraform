@@ -1,0 +1,20 @@
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+
+# Generated / environment-specific backend and shared settings
+backend.tf
+backend.hcl
+backend/*.hcl
+!backend/*.hcl.example
+globals.json
+
+# Downloaded OS images and locally installed CLI tools
+images/.cache/
+tools/

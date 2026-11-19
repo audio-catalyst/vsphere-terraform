@@ -1,0 +1,80 @@
+# CREATE / APPLY - creates or updates the selected cluster from its JSON files.
+# Canonical source: github-actions/create.yml
+# Mirrored to .github/workflows/create.yml by scripts/sync-github-workflows.ps1
+
+name: Create - Terraform apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      clusterName:
+        description: Cluster folder under clusters/
+        required: true
+        default: CLUSTER-PROD-01
+        type: string
+      cloud:
+        description: State backend
+        required: true
+        default: aws
+        type: choice
+        options:
+          - aws
+          - azure
+
+permissions:
+  contents: read
+
+env:
+  VSPHERE_SERVER: ${{ vars.VSPHERE_SERVER }}
+  VSPHERE_USER: ${{ vars.VSPHERE_USER }}
+  ALLOW_UNVERIFIED_SSL: ${{ vars.ALLOW_UNVERIFIED_SSL }}
+  DATACENTER_NAME: ${{ vars.DATACENTER_NAME }}
+  DATASTORE_NAME: ${{ vars.DATASTORE_NAME }}
+  ISO_DATASTORE_NAME: ${{ vars.ISO_DATASTORE_NAME }}
+  AWS_BUCKET: ${{ vars.AWS_BUCKET }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_LOCK_TABLE: ${{ vars.AWS_LOCK_TABLE }}
+  AWS_KEY_PREFIX: ${{ vars.AWS_KEY_PREFIX }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+  AZURE_CONTAINER: ${{ vars.AZURE_CONTAINER }}
+  AZURE_KEY_PREFIX: ${{ vars.AZURE_KEY_PREFIX }}
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+
+jobs:
+  apply:
+    name: Create / apply ${{ inputs.clusterName }}
+    runs-on: ubuntu-latest
+    # Recommended: create a "vSphere" environment with required reviewers,
+    # then uncomment the next line.
+    # environment: vSphere
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Terraform init
+        uses: ./.github/actions/terraform-init
+        with:
+          clusterName: ${{ inputs.clusterName }}
+          cloud: ${{ inputs.cloud }}
+
+      - name: Terraform plan (saved)
+        working-directory: clusters/${{ inputs.clusterName }}
+        env:
+          TF_VAR_vsphere_password: ${{ secrets.TF_VAR_vsphere_password }}
+        run: terraform plan -out=tfplan -input=false -no-color
+
+      - name: Terraform apply (saved plan)
+        working-directory: clusters/${{ inputs.clusterName }}
+        env:
+          TF_VAR_vsphere_password: ${{ secrets.TF_VAR_vsphere_password }}
+        run: |
+          set -euo pipefail
+          terraform apply -input=false -no-color tfplan
+          echo "--- outputs ---"
+          terraform output -json

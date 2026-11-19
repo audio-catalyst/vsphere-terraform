@@ -1,0 +1,5 @@
+{
+  "vlan_id": 300,
+  "type": "earlyBinding",
+  "description": "iSCSI / NFS"
+}

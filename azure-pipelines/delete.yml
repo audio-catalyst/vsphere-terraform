@@ -1,0 +1,68 @@
+# DELETE / DESTROY - removes everything managed in the selected cluster folder.
+# Requires an explicit confirmDelete=true parameter. Hosts, VDS and VMs created
+# outside Terraform are not touched.
+
+name: Delete - ${{ parameters.clusterName }} - $(Build.BuildId)
+
+trigger: none
+pr: none
+
+parameters:
+  - name: clusterName
+    type: string
+    default: CLUSTER-PROD-01
+  - name: cloud
+    type: string
+    default: aws
+    values:
+      - aws
+      - azure
+  - name: confirmDelete
+    type: boolean
+    default: false
+
+variables:
+  - group: terraform-backend
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Destroy
+    displayName: Delete ${{ parameters.clusterName }}
+    jobs:
+      - job: TerraformDestroy
+        displayName: Terraform destroy
+        # Recommended: create an environment with an approval gate and uncomment:
+        # environment: vSphere
+
+        steps:
+          - script: |
+              set -euo pipefail
+              confirm='${{ parameters.confirmDelete }}'
+              if [ "${confirm,,}" != "true" ]; then
+                echo "##vso[task.logissue type=error]Refusing to destroy: set confirmDelete=true to confirm."
+                exit 1
+              fi
+            displayName: Confirm destructive operation
+
+          - template: templates/terraform-init.yml
+            parameters:
+              clusterName: ${{ parameters.clusterName }}
+              cloud: ${{ parameters.cloud }}
+
+          - script: |
+              set -euo pipefail
+              terraform plan -destroy -out=destroy.tfplan -input=false -no-color
+            displayName: Terraform destroy plan (review this in the logs)
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)
+
+          - script: |
+              set -euo pipefail
+              terraform apply -input=false -no-color destroy.tfplan
+            displayName: Terraform destroy (saved plan)
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)

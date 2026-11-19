@@ -1,0 +1,9 @@
+{
+  "vsphere_server": "vcenter.example.local",
+  "vsphere_user": "terraform@vsphere.local",
+  "allow_unverified_ssl": false,
+  "datacenter_name": "DC01",
+  "datastore_name": "DS-VM-01",
+  "iso_datastore_name": "DS-ISO-01",
+  "vm_hardware_version": null
+}

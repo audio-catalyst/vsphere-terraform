@@ -1,0 +1,8 @@
+# Amazon S3 backend values shared by all cluster folders.
+# Do NOT set "key" here: the selector script writes a unique key per cluster.
+
+bucket         = "my-terraform-state-bucket"
+region         = "eu-west-1"
+dynamodb_table = "terraform-state-locks"
+encrypt        = true
+use_lockfile   = true

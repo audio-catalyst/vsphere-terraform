@@ -1,0 +1,12 @@
+{
+  "name": "prod-app-01",
+  "num_cpus": 4,
+  "memory": 8192,
+  "os": "ubuntu",
+  "version": "24.04",
+  "variant": "default",
+  "thin_provisioned": true,
+  "network_adapter_type": "vmxnet3",
+  "networks": ["NET-DATA"],
+  "annotation": "Application node - Terraform managed"
+}

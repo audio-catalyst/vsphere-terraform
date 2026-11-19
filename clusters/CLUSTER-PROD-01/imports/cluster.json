@@ -1,0 +1,5 @@
+{
+  "resource": "vsphere_compute_cluster.this",
+  "path": "/{datacenter}/host/Compute/CLUSTER-PROD-01",
+  "notes": "Full vCenter inventory path of the existing compute cluster. {datacenter} is replaced with DATACENTER_NAME from globals.json at runtime. vSAN (disk groups, fault domains, stretched cluster and DIT encryption) is configured on this resource, so it is imported together with the cluster."
+}

@@ -1,0 +1,93 @@
+# DRIFT DETECTION - scheduled plan that fails when vSphere no longer matches
+# the committed JSON configuration (or when the plan errors).
+# Exit codes from terraform plan -detailed-exitcode:
+#   0 = no changes, 1 = error, 2 = changes present (drift).
+# Canonical source: github-actions/drift.yml
+
+name: Drift - Terraform detect drift
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      clusterName:
+        description: Cluster folder under clusters/
+        required: true
+        default: CLUSTER-PROD-01
+        type: string
+      cloud:
+        description: State backend
+        required: true
+        default: aws
+        type: choice
+        options:
+          - aws
+          - azure
+
+permissions:
+  contents: read
+
+env:
+  VSPHERE_SERVER: ${{ vars.VSPHERE_SERVER }}
+  VSPHERE_USER: ${{ vars.VSPHERE_USER }}
+  ALLOW_UNVERIFIED_SSL: ${{ vars.ALLOW_UNVERIFIED_SSL }}
+  DATACENTER_NAME: ${{ vars.DATACENTER_NAME }}
+  DATASTORE_NAME: ${{ vars.DATASTORE_NAME }}
+  ISO_DATASTORE_NAME: ${{ vars.ISO_DATASTORE_NAME }}
+  AWS_BUCKET: ${{ vars.AWS_BUCKET }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_LOCK_TABLE: ${{ vars.AWS_LOCK_TABLE }}
+  AWS_KEY_PREFIX: ${{ vars.AWS_KEY_PREFIX }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+  AZURE_CONTAINER: ${{ vars.AZURE_CONTAINER }}
+  AZURE_KEY_PREFIX: ${{ vars.AZURE_KEY_PREFIX }}
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+
+jobs:
+  drift:
+    name: Drift check ${{ inputs.clusterName || 'CLUSTER-PROD-01' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Terraform init
+        uses: ./.github/actions/terraform-init
+        with:
+          clusterName: ${{ inputs.clusterName || 'CLUSTER-PROD-01' }}
+          cloud: ${{ inputs.cloud || 'aws' }}
+
+      - name: Terraform plan -detailed-exitcode
+        working-directory: clusters/${{ inputs.clusterName || 'CLUSTER-PROD-01' }}
+        env:
+          TF_VAR_vsphere_password: ${{ secrets.TF_VAR_vsphere_password }}
+        run: |
+          set +e
+          terraform plan -detailed-exitcode -input=false -no-color | tee drift-plan.txt
+          code=${PIPESTATUS[0]}
+          set -e
+
+          if [ "$code" -eq 0 ]; then
+            echo "No drift detected in ${{ inputs.clusterName || 'CLUSTER-PROD-01' }}."
+          elif [ "$code" -eq 2 ]; then
+            echo "::error::Drift detected in ${{ inputs.clusterName || 'CLUSTER-PROD-01' }}: vSphere does not match the committed JSON configuration. See drift-plan.txt above."
+            exit 2
+          else
+            echo "::error::Terraform plan failed while checking ${{ inputs.clusterName || 'CLUSTER-PROD-01' }}."
+            exit "$code"
+          fi
+
+      - name: Upload drift plan on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-plan-${{ inputs.clusterName || 'CLUSTER-PROD-01' }}-${{ github.run_id }}
+          path: clusters/${{ inputs.clusterName || 'CLUSTER-PROD-01' }}/drift-plan.txt
+          if-no-files-found: ignore

@@ -1,0 +1,29 @@
+{
+  "vds": {
+    "resource": "vsphere_distributed_virtual_switch.this[0]",
+    "path": "/{datacenter}/network/VDS-PROD-01"
+  },
+  "port_groups": [
+    {
+      "name": "NET-MGMT",
+      "resource": "vsphere_distributed_port_group.this[\"NET-MGMT\"]",
+      "path": "/{datacenter}/network/NET-MGMT"
+    },
+    {
+      "name": "NET-DATA",
+      "resource": "vsphere_distributed_port_group.this[\"NET-DATA\"]",
+      "path": "/{datacenter}/network/NET-DATA"
+    },
+    {
+      "name": "NET-STORAGE",
+      "resource": "vsphere_distributed_port_group.this[\"NET-STORAGE\"]",
+      "path": "/{datacenter}/network/NET-STORAGE"
+    },
+    {
+      "name": "NET-VSAN",
+      "resource": "vsphere_distributed_port_group.this[\"NET-VSAN\"]",
+      "path": "/{datacenter}/network/NET-VSAN"
+    }
+  ],
+  "notes": "Only used when cluster.json has create_networks = true. The path is the real vCenter network object name, which may differ from the logical name in networks/<NAME>.json."
+}

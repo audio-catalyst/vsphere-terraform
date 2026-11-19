@@ -1,0 +1,20 @@
+{
+  "machines": [
+    {
+      "name": "prod-app-01",
+      "resource": "vsphere_virtual_machine.machine[\"prod-app-01\"]",
+      "path": "/{datacenter}/vm/prod-app-01"
+    },
+    {
+      "name": "prod-db-01",
+      "resource": "vsphere_virtual_machine.machine[\"prod-db-01\"]",
+      "path": "/{datacenter}/vm/prod-db-01"
+    },
+    {
+      "name": "prod-util-01",
+      "resource": "vsphere_virtual_machine.machine[\"prod-util-01\"]",
+      "path": "/{datacenter}/vm/prod-util-01"
+    }
+  ],
+  "notes": "Path is the real vCenter inventory path of each VM. Include any VM folder in the path, e.g. /{datacenter}/vm/Production/prod-app-01. The map key must match machines/<NAME>.json and the machine's name field."
+}

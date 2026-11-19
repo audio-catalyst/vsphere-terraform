@@ -1,0 +1,19 @@
+{
+  "vds": {
+    "resource": "vsphere_distributed_virtual_switch.this[0]",
+    "path": "/{datacenter}/network/VDS-DEV-01"
+  },
+  "port_groups": [
+    {
+      "name": "DEV-DATA",
+      "resource": "vsphere_distributed_port_group.this[\"DEV-DATA\"]",
+      "path": "/{datacenter}/network/DEV-DATA"
+    },
+    {
+      "name": "DEV-VSAN",
+      "resource": "vsphere_distributed_port_group.this[\"DEV-VSAN\"]",
+      "path": "/{datacenter}/network/DEV-VSAN"
+    }
+  ],
+  "notes": "Only used when cluster.json has create_networks = true. The path is the real vCenter network object name, which may differ from the logical name in networks/<NAME>.json."
+}

@@ -1,0 +1,13 @@
+{
+  "name": "prod-db-01",
+  "num_cpus": 8,
+  "memory": 16384,
+  "os": "rockylinux",
+  "version": "9",
+  "variant": "minimal",
+  "disk_size": 200,
+  "thin_provisioned": false,
+  "network_adapter_type": "vmxnet3",
+  "networks": ["NET-DATA", "NET-STORAGE"],
+  "annotation": "Database node - Terraform managed"
+}

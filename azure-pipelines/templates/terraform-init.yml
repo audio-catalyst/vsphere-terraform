@@ -1,0 +1,95 @@
+# Shared setup for every pipeline.
+# Generates the two Git-ignored files the cluster root modules need
+# (globals.json at repo root and backend.tf in the cluster folder), then
+# initialises Terraform with the selected remote backend.
+#
+# All $(VARIABLE) references come from the `terraform-backend` variable group.
+# See pipelines/README.md for the full list.
+
+parameters:
+  - name: clusterName
+    type: string
+  - name: cloud
+    type: string
+    values:
+      - aws
+      - azure
+
+steps:
+  - task: TerraformInstaller@0
+    displayName: Install Terraform
+    inputs:
+      terraformVersion: 'latest'
+
+  - script: |
+      set -euo pipefail
+
+      # An empty ISO datastore means "null" in the root module.
+      if [ -z '$(ISO_DATASTORE_NAME)' ]; then
+        ISO_JSON='null'
+      else
+        ISO_JSON="\"$(ISO_DATASTORE_NAME)\""
+      fi
+
+      cat > globals.json <<EOF
+      {
+        "vsphere_server": "$(VSPHERE_SERVER)",
+        "vsphere_user": "$(VSPHERE_USER)",
+        "allow_unverified_ssl": $(ALLOW_UNVERIFIED_SSL),
+        "datacenter_name": "$(DATACENTER_NAME)",
+        "datastore_name": "$(DATASTORE_NAME)",
+        "iso_datastore_name": $ISO_JSON,
+        "vm_hardware_version": null
+      }
+      EOF
+
+      if [ '${{ parameters.cloud }}' = 'aws' ]; then
+        BACKEND_TYPE='s3'
+      else
+        BACKEND_TYPE='azurerm'
+      fi
+
+      cat > 'clusters/${{ parameters.clusterName }}/backend.tf' <<EOF
+      terraform {
+        required_version = ">= 1.10.0"
+        required_providers {
+          vsphere = {
+            source  = "vmware/vsphere"
+            version = "~> 2.13"
+          }
+        }
+
+        backend "$BACKEND_TYPE" {}
+      }
+      EOF
+    displayName: Generate globals.json and backend.tf
+    workingDirectory: '$(Build.SourcesDirectory)'
+
+  - script: |
+      set -euo pipefail
+
+      if [ '${{ parameters.cloud }}' = 'aws' ]; then
+        terraform init -input=false \
+          -backend-config="bucket=$(AWS_BUCKET)" \
+          -backend-config="region=$(AWS_REGION)" \
+          -backend-config="key=$(AWS_KEY_PREFIX)/${{ parameters.clusterName }}/terraform.tfstate" \
+          -backend-config="dynamodb_table=$(AWS_LOCK_TABLE)" \
+          -backend-config="encrypt=true" \
+          -backend-config="use_lockfile=true"
+      else
+        terraform init -input=false \
+          -backend-config="resource_group_name=$(AZURE_RESOURCE_GROUP)" \
+          -backend-config="storage_account_name=$(AZURE_STORAGE_ACCOUNT)" \
+          -backend-config="container_name=$(AZURE_CONTAINER)" \
+          -backend-config="key=$(AZURE_KEY_PREFIX)/${{ parameters.clusterName }}.tfstate" \
+          -backend-config="use_azuread_auth=true"
+      fi
+    displayName: Terraform init
+    workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+    env:
+      AWS_ACCESS_KEY_ID: $(AWS_ACCESS_KEY_ID)
+      AWS_SECRET_ACCESS_KEY: $(AWS_SECRET_ACCESS_KEY)
+      ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+      ARM_TENANT_ID: $(ARM_TENANT_ID)
+      ARM_SUBSCRIPTION_ID: $(ARM_SUBSCRIPTION_ID)
+      ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)

@@ -1,0 +1,57 @@
+# CREATE / APPLY - creates or updates the selected cluster from its JSON files.
+# Run manually, or wire this file into a CI pipeline with `extends`/`trigger`.
+
+name: Create - ${{ parameters.clusterName }} - $(Build.BuildId)
+
+trigger: none
+pr: none
+
+parameters:
+  - name: clusterName
+    type: string
+    default: CLUSTER-PROD-01
+  - name: cloud
+    type: string
+    default: aws
+    values:
+      - aws
+      - azure
+
+variables:
+  - group: terraform-backend
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Apply
+    displayName: Create / apply ${{ parameters.clusterName }}
+    jobs:
+      - job: TerraformApply
+        displayName: Terraform apply
+        # Recommended: create an environment with an approval gate and uncomment:
+        # environment: vSphere
+
+        steps:
+          - template: templates/terraform-init.yml
+            parameters:
+              clusterName: ${{ parameters.clusterName }}
+              cloud: ${{ parameters.cloud }}
+
+          - script: |
+              set -euo pipefail
+              terraform plan -out=tfplan -input=false -no-color
+            displayName: Terraform plan (saved)
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)
+
+          - script: |
+              set -euo pipefail
+              terraform apply -input=false -no-color tfplan
+              echo "--- outputs ---"
+              terraform output -json
+            displayName: Terraform apply (saved plan)
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)

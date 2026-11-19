@@ -1,0 +1,12 @@
+{
+  "name": "dev-app-01",
+  "num_cpus": 2,
+  "memory": 4096,
+  "os": "debian",
+  "version": "12",
+  "variant": "minimal",
+  "thin_provisioned": true,
+  "network_adapter_type": "vmxnet3",
+  "networks": ["DEV-DATA"],
+  "annotation": "Development app node - Terraform managed"
+}

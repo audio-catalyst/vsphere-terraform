@@ -1,0 +1,12 @@
+{
+  "name": "dev-build-01",
+  "num_cpus": 4,
+  "memory": 8192,
+  "os": "ubuntu",
+  "version": "22.04",
+  "variant": "default",
+  "thin_provisioned": true,
+  "network_adapter_type": "vmxnet3",
+  "networks": ["DEV-DATA"],
+  "annotation": "CI/build runner - Terraform managed"
+}

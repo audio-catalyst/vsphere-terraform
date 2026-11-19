@@ -1,0 +1,49 @@
+# PLAN - shows what would change, without touching vSphere state.
+# Publishes the saved plan file as a pipeline artifact for audit.
+
+name: Plan - ${{ parameters.clusterName }} - $(Build.BuildId)
+
+trigger: none
+pr: none
+
+parameters:
+  - name: clusterName
+    type: string
+    default: CLUSTER-PROD-01
+  - name: cloud
+    type: string
+    default: aws
+    values:
+      - aws
+      - azure
+
+variables:
+  - group: terraform-backend
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Plan
+    displayName: Plan ${{ parameters.clusterName }}
+    jobs:
+      - job: TerraformPlan
+        displayName: Terraform plan
+        steps:
+          - template: templates/terraform-init.yml
+            parameters:
+              clusterName: ${{ parameters.clusterName }}
+              cloud: ${{ parameters.cloud }}
+
+          - script: |
+              set -euo pipefail
+              terraform plan -out=tfplan -input=false -no-color
+            displayName: Terraform plan
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)
+
+          - publish: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}/tfplan'
+            artifact: 'tfplan-${{ parameters.clusterName }}-$(Build.BuildId)'
+            displayName: Publish plan artifact
+            condition: succeeded()

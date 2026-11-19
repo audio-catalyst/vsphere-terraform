@@ -1,0 +1,94 @@
+name: Terraform init
+description: Generate globals.json and backend.tf for one cluster, then initialise Terraform with the selected remote backend.
+
+inputs:
+  clusterName:
+    description: Cluster folder name under clusters/
+    required: true
+  cloud:
+    description: Remote backend to use (aws or azure)
+    required: true
+    default: aws
+
+runs:
+  using: composite
+  steps:
+    - name: Install Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: latest
+        terraform_wrapper: false
+
+    - name: Generate globals.json and backend.tf
+      shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.clusterName }}
+        CLOUD: ${{ inputs.cloud }}
+      run: |
+        set -euo pipefail
+
+        # An empty ISO datastore means "null" in the root module.
+        if [ -z "${ISO_DATASTORE_NAME:-}" ]; then
+          ISO_JSON='null'
+        else
+          ISO_JSON="\"$ISO_DATASTORE_NAME\""
+        fi
+
+        cat > "$GITHUB_WORKSPACE/globals.json" <<EOF
+        {
+          "vsphere_server": "$VSPHERE_SERVER",
+          "vsphere_user": "$VSPHERE_USER",
+          "allow_unverified_ssl": $ALLOW_UNVERIFIED_SSL,
+          "datacenter_name": "$DATACENTER_NAME",
+          "datastore_name": "$DATASTORE_NAME",
+          "iso_datastore_name": $ISO_JSON,
+          "vm_hardware_version": null
+        }
+        EOF
+
+        if [ "$CLOUD" = 'aws' ]; then
+          BACKEND_TYPE='s3'
+        else
+          BACKEND_TYPE='azurerm'
+        fi
+
+        mkdir -p "$GITHUB_WORKSPACE/clusters/$CLUSTER_NAME"
+        cat > "$GITHUB_WORKSPACE/clusters/$CLUSTER_NAME/backend.tf" <<EOF
+        terraform {
+          required_version = ">= 1.10.0"
+          required_providers {
+            vsphere = {
+              source  = "vmware/vsphere"
+              version = "~> 2.13"
+            }
+          }
+
+          backend "$BACKEND_TYPE" {}
+        }
+        EOF
+
+    - name: Terraform init
+      shell: bash
+      env:
+        CLUSTER_NAME: ${{ inputs.clusterName }}
+        CLOUD: ${{ inputs.cloud }}
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_WORKSPACE/clusters/$CLUSTER_NAME"
+
+        if [ "$CLOUD" = 'aws' ]; then
+          terraform init -input=false \
+            -backend-config="bucket=$AWS_BUCKET" \
+            -backend-config="region=$AWS_REGION" \
+            -backend-config="key=$AWS_KEY_PREFIX/$CLUSTER_NAME/terraform.tfstate" \
+            -backend-config="dynamodb_table=$AWS_LOCK_TABLE" \
+            -backend-config="encrypt=true" \
+            -backend-config="use_lockfile=true"
+        else
+          terraform init -input=false \
+            -backend-config="resource_group_name=$AZURE_RESOURCE_GROUP" \
+            -backend-config="storage_account_name=$AZURE_STORAGE_ACCOUNT" \
+            -backend-config="container_name=$AZURE_CONTAINER" \
+            -backend-config="key=$AZURE_KEY_PREFIX/$CLUSTER_NAME.tfstate" \
+            -backend-config="use_azuread_auth=true"
+        fi

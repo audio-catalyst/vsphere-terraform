@@ -1,0 +1,58 @@
+{
+  "name": "CLUSTER-DEV-01",
+  "folder": "Compute",
+  "drs_enabled": true,
+  "drs_automation_level": "partiallyAutomated",
+  "drs_migration_threshold": 3,
+  "ha_enabled": true,
+  "ha_host_monitoring": "enabled",
+  "ha_vm_monitoring": "vmMonitoringDisabled",
+  "ha_admission_control_policy": "resourcePercentage",
+  "ha_admission_control_host_failure_tolerance": 1,
+  "evc_mode": null,
+  "host_cluster_exit_timeout": 3600,
+  "esxi_hosts": [
+    "esxi-dev-01.example.local",
+    "esxi-dev-02.example.local"
+  ],
+
+  "vsan": {
+    "enabled": false,
+    "esa_enabled": false,
+    "unmap_enabled": false,
+    "dedup_enabled": false,
+    "compression_enabled": false,
+    "performance_enabled": true,
+    "verbose_mode_enabled": false,
+    "network_diagnostic_mode_enabled": false,
+    "dit_encryption_enabled": false,
+    "dit_rekey_interval": 1440,
+    "remote_datastore_ids": [],
+    "disk_groups": [],
+    "fault_domains": {},
+    "stretched_cluster": {
+      "preferred_hosts": [],
+      "secondary_hosts": [],
+      "witness_host": "",
+      "preferred_domain_name": "Preferred",
+      "secondary_domain_name": "Secondary"
+    }
+  },
+
+  "create_networks": true,
+  "vds": {
+    "name": "VDS-DEV-01",
+    "uplinks": ["uplink1", "uplink2"],
+    "active_uplinks": ["uplink1", "uplink2"],
+    "standby_uplinks": [],
+    "max_mtu": 9000,
+    "host_uplinks": {
+      "esxi-dev-01.example.local": ["vmnic0", "vmnic1"],
+      "esxi-dev-02.example.local": ["vmnic0", "vmnic1"]
+    }
+  },
+  "existing_networks": {
+    "DEV-DATA": "VM Network",
+    "DEV-VSAN": "VM Network"
+  }
+}

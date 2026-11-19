@@ -1,0 +1,15 @@
+{
+  "machines": [
+    {
+      "name": "dev-app-01",
+      "resource": "vsphere_virtual_machine.machine[\"dev-app-01\"]",
+      "path": "/{datacenter}/vm/dev-app-01"
+    },
+    {
+      "name": "dev-build-01",
+      "resource": "vsphere_virtual_machine.machine[\"dev-build-01\"]",
+      "path": "/{datacenter}/vm/dev-build-01"
+    }
+  ],
+  "notes": "Path is the real vCenter inventory path of each VM. Include any VM folder in the path, e.g. /{datacenter}/vm/Development/dev-app-01. The map key must match machines/<NAME>.json and the machine's name field."
+}

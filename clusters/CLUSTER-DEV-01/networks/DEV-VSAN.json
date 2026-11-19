@@ -1,0 +1,5 @@
+{
+  "vlan_id": 410,
+  "type": "earlyBinding",
+  "description": "Reserved for future vSAN VMkernel traffic"
+}

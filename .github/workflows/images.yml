@@ -1,0 +1,78 @@
+# IMAGES - download, verify and register the Linux OS images used by a cluster.
+# Canonical source: github-actions/images.yml
+# Mirrored to .github/workflows/images.yml by scripts/sync-github-workflows.ps1
+
+name: Images - Prepare OS templates
+
+on:
+  workflow_dispatch:
+    inputs:
+      clusterName:
+        description: Cluster folder under clusters/ (ignored when all is true)
+        required: true
+        default: CLUSTER-PROD-01
+        type: string
+      all:
+        description: Prepare every image in the catalog
+        required: true
+        default: false
+        type: boolean
+      dryRun:
+        description: Only print what would be downloaded and registered
+        required: true
+        default: false
+        type: boolean
+      templateHost:
+        description: ESXi host used to register templates (blank = first host in cluster.json)
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  VSPHERE_SERVER: ${{ vars.VSPHERE_SERVER }}
+  VSPHERE_USER: ${{ vars.VSPHERE_USER }}
+  ALLOW_UNVERIFIED_SSL: ${{ vars.ALLOW_UNVERIFIED_SSL }}
+  DATACENTER_NAME: ${{ vars.DATACENTER_NAME }}
+  DATASTORE_NAME: ${{ vars.DATASTORE_NAME }}
+
+jobs:
+  prepare-images:
+    name: Prepare OS templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install govc and 7z
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq p7zip-full
+
+          GOVC_VERSION='v0.45.0'
+          curl -fsSL "https://github.com/vmware/govmomi/releases/download/${GOVC_VERSION}/govc_Linux_x86_64.tar.gz" -o /tmp/govc.tgz
+          sudo tar -xz -C /usr/local/bin -f /tmp/govc.tgz govc
+          govc version
+          7z i >/dev/null
+          echo "govc and 7z ready"
+
+      - name: Download, verify and register OS templates
+        env:
+          TF_VAR_vsphere_password: ${{ secrets.TF_VAR_vsphere_password }}
+          CLUSTER_NAME: ${{ inputs.clusterName }}
+          PREPARE_ALL: ${{ inputs.all }}
+          DRY_RUN: ${{ inputs.dryRun }}
+          VSPHERE_TEMPLATE_HOST: ${{ inputs.templateHost }}
+        run: |
+          set -euo pipefail
+
+          args=( -NoProfile -File scripts/prepare-vm-images.ps1 -ClusterName "$CLUSTER_NAME" )
+          if [ "${PREPARE_ALL,,}" = 'true' ]; then args+=( -All ); fi
+          if [ "${DRY_RUN,,}" = 'true' ]; then args+=( -DryRun ); fi
+          if [ "${ALLOW_UNVERIFIED_SSL,,}" = 'true' ]; then args+=( -AllowUnverifiedSsl ); fi
+          if [ -n "${VSPHERE_TEMPLATE_HOST:-}" ]; then args+=( -TemplateHost "$VSPHERE_TEMPLATE_HOST" ); fi
+
+          pwsh "${args[@]}"

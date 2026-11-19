@@ -1,0 +1,7 @@
+# AzureRM backend values shared by all cluster folders.
+# Do NOT set "key" here: the selector script writes a unique key per cluster.
+
+resource_group_name  = "rg-terraform-state"
+storage_account_name = "stterraformstate"
+container_name       = "tfstate"
+use_azuread_auth     = true

@@ -1,0 +1,12 @@
+# Normalise text files to LF in the repository and on all checkouts.
+* text=auto
+
+*.tf     text eol=lf
+*.tfvars text eol=lf
+*.hcl    text eol=lf
+*.json   text eol=lf
+*.yml    text eol=lf
+*.yaml   text eol=lf
+*.md     text eol=lf
+*.ps1    text eol=lf
+*.sh     text eol=lf

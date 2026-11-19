@@ -1,0 +1,66 @@
+# DRIFT DETECTION - scheduled plan that fails when vSphere no longer matches
+# the committed JSON configuration (or when the plan errors).
+# Exit codes from `terraform plan -detailed-exitcode`:
+#   0 = no changes, 1 = error, 2 = changes present (drift).
+
+name: Drift - ${{ parameters.clusterName }} - $(Build.BuildId)
+
+trigger: none
+pr: none
+
+schedules:
+  - cron: '0 3 * * *'
+    displayName: Nightly drift check (03:00 UTC)
+    branches:
+      include:
+        - main
+    always: true
+
+parameters:
+  - name: clusterName
+    type: string
+    default: CLUSTER-PROD-01
+  - name: cloud
+    type: string
+    default: aws
+    values:
+      - aws
+      - azure
+
+variables:
+  - group: terraform-backend
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: Drift
+    displayName: Drift check ${{ parameters.clusterName }}
+    jobs:
+      - job: TerraformDrift
+        displayName: Detect drift
+        steps:
+          - template: templates/terraform-init.yml
+            parameters:
+              clusterName: ${{ parameters.clusterName }}
+              cloud: ${{ parameters.cloud }}
+
+          - script: |
+              set +e
+              terraform plan -detailed-exitcode -input=false -no-color | tee drift-plan.txt
+              code=${PIPESTATUS[0]}
+              set -e
+
+              if [ "$code" -eq 0 ]; then
+                echo "No drift detected in ${{ parameters.clusterName }}."
+              elif [ "$code" -eq 2 ]; then
+                echo "##vso[task.logissue type=error]Drift detected in ${{ parameters.clusterName }}: vSphere does not match the committed JSON configuration. See drift-plan.txt above."
+                exit 2
+              else
+                echo "##vso[task.logissue type=error]Terraform plan failed while checking ${{ parameters.clusterName }}."
+                exit "$code"
+              fi
+            displayName: Terraform plan -detailed-exitcode
+            workingDirectory: '$(Build.SourcesDirectory)/clusters/${{ parameters.clusterName }}'
+            env:
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)

@@ -1,0 +1,74 @@
+# PLAN - shows what would change, without touching vSphere state.
+# Canonical source: github-actions/plan.yml
+
+name: Plan - Terraform plan
+
+on:
+  workflow_dispatch:
+    inputs:
+      clusterName:
+        description: Cluster folder under clusters/
+        required: true
+        default: CLUSTER-PROD-01
+        type: string
+      cloud:
+        description: State backend
+        required: true
+        default: aws
+        type: choice
+        options:
+          - aws
+          - azure
+
+permissions:
+  contents: read
+
+env:
+  VSPHERE_SERVER: ${{ vars.VSPHERE_SERVER }}
+  VSPHERE_USER: ${{ vars.VSPHERE_USER }}
+  ALLOW_UNVERIFIED_SSL: ${{ vars.ALLOW_UNVERIFIED_SSL }}
+  DATACENTER_NAME: ${{ vars.DATACENTER_NAME }}
+  DATASTORE_NAME: ${{ vars.DATASTORE_NAME }}
+  ISO_DATASTORE_NAME: ${{ vars.ISO_DATASTORE_NAME }}
+  AWS_BUCKET: ${{ vars.AWS_BUCKET }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_LOCK_TABLE: ${{ vars.AWS_LOCK_TABLE }}
+  AWS_KEY_PREFIX: ${{ vars.AWS_KEY_PREFIX }}
+  AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+  AZURE_STORAGE_ACCOUNT: ${{ vars.AZURE_STORAGE_ACCOUNT }}
+  AZURE_CONTAINER: ${{ vars.AZURE_CONTAINER }}
+  AZURE_KEY_PREFIX: ${{ vars.AZURE_KEY_PREFIX }}
+  ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+
+jobs:
+  plan:
+    name: Plan ${{ inputs.clusterName }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Terraform init
+        uses: ./.github/actions/terraform-init
+        with:
+          clusterName: ${{ inputs.clusterName }}
+          cloud: ${{ inputs.cloud }}
+
+      - name: Terraform plan
+        working-directory: clusters/${{ inputs.clusterName }}
+        env:
+          TF_VAR_vsphere_password: ${{ secrets.TF_VAR_vsphere_password }}
+        run: terraform plan -out=tfplan -input=false -no-color
+
+      - name: Publish plan artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.clusterName }}-${{ github.run_id }}
+          path: clusters/${{ inputs.clusterName }}/tfplan
+          if-no-files-found: error

@@ -1,0 +1,71 @@
+# IMAGES - download, verify and register the Linux OS images used by a cluster.
+# Windows templates are only checked; they must be prepared in vCenter first.
+
+name: Images - ${{ parameters.clusterName }} - $(Build.BuildId)
+
+trigger: none
+pr: none
+
+parameters:
+  - name: clusterName
+    type: string
+    default: CLUSTER-PROD-01
+  - name: all
+    type: boolean
+    default: false
+  - name: dryRun
+    type: boolean
+    default: false
+  - name: templateHost
+    type: string
+    default: ''
+
+variables:
+  - group: terraform-backend
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+  - stage: PrepareImages
+    displayName: Prepare OS images for ${{ parameters.clusterName }}
+    jobs:
+      - job: PrepareImages
+        displayName: Verify and register templates
+        steps:
+          - script: |
+              set -euo pipefail
+              sudo apt-get update -qq
+              sudo apt-get install -y -qq p7zip-full
+
+              GOVC_VERSION='v0.45.0'
+              curl -fsSL "https://github.com/vmware/govmomi/releases/download/${GOVC_VERSION}/govc_Linux_x86_64.tar.gz" -o /tmp/govc.tgz
+              sudo tar -xz -C /usr/local/bin -f /tmp/govc.tgz govc
+              govc version
+              7z i >/dev/null
+              echo "govc and 7z ready"
+            displayName: Install govc and 7z
+
+          - script: |
+              set -euo pipefail
+
+              args=( -NoProfile -File scripts/prepare-vm-images.ps1 -ClusterName "$CLUSTER_NAME" )
+              if [ "${PREPARE_ALL,,}" = 'true' ]; then args+=( -All ); fi
+              if [ "${DRY_RUN,,}" = 'true' ]; then args+=( -DryRun ); fi
+              if [ "${ALLOW_UNVERIFIED_SSL,,}" = 'true' ]; then args+=( -AllowUnverifiedSsl ); fi
+              if [ -n "${VSPHERE_TEMPLATE_HOST:-}" ]; then args+=( -TemplateHost "$VSPHERE_TEMPLATE_HOST" ); fi
+
+              pwsh "${args[@]}"
+            displayName: Download, verify and register OS templates
+            workingDirectory: '$(Build.SourcesDirectory)'
+            env:
+              CLUSTER_NAME: ${{ parameters.clusterName }}
+              PREPARE_ALL: ${{ parameters.all }}
+              DRY_RUN: ${{ parameters.dryRun }}
+              VSPHERE_TEMPLATE_HOST: ${{ parameters.templateHost }}
+              VSPHERE_SERVER: $(VSPHERE_SERVER)
+              VSPHERE_USER: $(VSPHERE_USER)
+              TF_VAR_vsphere_password: $(TF_VAR_vsphere_password)
+              DATACENTER_NAME: $(DATACENTER_NAME)
+              DATASTORE_NAME: $(DATASTORE_NAME)
+              ALLOW_UNVERIFIED_SSL: $(ALLOW_UNVERIFIED_SSL)
