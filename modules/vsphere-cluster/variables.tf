@@ -109,7 +109,7 @@ variable "cluster" {
         witness_host          = string
         preferred_domain_name = optional(string, "Preferred")
         secondary_domain_name = optional(string, "Secondary")
-      }), {
+        }), {
         preferred_hosts       = []
         secondary_hosts       = []
         witness_host          = ""
@@ -128,7 +128,7 @@ variable "cluster" {
       standby_uplinks = optional(list(string), [])
       max_mtu         = optional(number, 1500)
       host_uplinks    = map(list(string))
-    }), {
+      }), {
       name            = "vds-managed"
       uplinks         = ["uplink1", "uplink2"]
       active_uplinks  = ["uplink1", "uplink2"]
@@ -136,6 +136,21 @@ variable "cluster" {
       max_mtu         = 1500
       host_uplinks    = {}
     })
+
+    # Optional first-boot Ansible bootstrap for every VM in this cluster.
+    # Machines can override every field in their own JSON file.
+    ansible = optional(object({
+      enabled           = optional(bool, false)
+      repository        = optional(string, null)
+      playbook          = optional(string, "site.yml")
+      branch            = optional(string, "main")
+      directory         = optional(string, null)
+      requirements_file = optional(string, null)
+      extra_vars        = optional(map(string), {})
+      package_name      = optional(string, "ansible-core")
+      install_packages  = optional(bool, true)
+      run_pull          = optional(bool, true)
+    }), {})
   })
 
   validation {
@@ -238,6 +253,11 @@ variable "cluster" {
     condition     = alltrue([for u in concat(var.cluster.vds.active_uplinks, var.cluster.vds.standby_uplinks) : contains(var.cluster.vds.uplinks, u)])
     error_message = "active_uplinks and standby_uplinks must be subsets of vds.uplinks."
   }
+
+  validation {
+    condition     = !var.cluster.ansible.enabled || length(trimspace(try(var.cluster.ansible.repository, ""))) > 0
+    error_message = "cluster.ansible.enabled requires a non-empty ansible.repository URL."
+  }
 }
 
 # =============================================================================
@@ -310,6 +330,22 @@ variable "machines" {
     ipv4_gateway    = optional(string, null)
     dns_server_list = optional(list(string), [])
     dns_suffix_list = optional(list(string), [])
+
+    # Optional per-VM override of the cluster-wide Ansible bootstrap.
+    # Any field left null inherits the cluster value. "enabled": false
+    # disables the bootstrap even when the cluster enables it.
+    ansible = optional(object({
+      enabled           = optional(bool, null)
+      repository        = optional(string, null)
+      playbook          = optional(string, null)
+      branch            = optional(string, null)
+      directory         = optional(string, null)
+      requirements_file = optional(string, null)
+      extra_vars        = optional(map(string), null)
+      package_name      = optional(string, null)
+      install_packages  = optional(bool, null)
+      run_pull          = optional(bool, null)
+    }), null)
   }))
 
   validation {

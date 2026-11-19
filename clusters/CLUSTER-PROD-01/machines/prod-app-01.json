@@ -8,5 +8,9 @@
   "thin_provisioned": true,
   "network_adapter_type": "vmxnet3",
   "networks": ["NET-DATA"],
-  "annotation": "Application node - Terraform managed"
+  "annotation": "Application node - Terraform managed",
+  "ansible": {
+    "enabled": false,
+    "playbook": "app.yml"
+  }
 }

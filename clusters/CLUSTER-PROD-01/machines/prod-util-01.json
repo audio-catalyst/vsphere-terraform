@@ -9,5 +9,9 @@
   "network_adapter_type": "vmxnet3",
   "networks": ["NET-MGMT"],
   "iso_path": null,
-  "annotation": "Utility node - Terraform managed"
+  "annotation": "Utility node - Terraform managed",
+  "ansible": {
+    "enabled": false,
+    "directory": "/opt/ansible-pull"
+  }
 }

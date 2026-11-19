@@ -39,6 +39,10 @@
     }
   },
 
+  "ansible": {
+    "enabled": false
+  },
+
   "create_networks": true,
   "vds": {
     "name": "VDS-DEV-01",

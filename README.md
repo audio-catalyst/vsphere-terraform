@@ -49,7 +49,8 @@ vsphere-terraform/
 │       ├── variables.tf
 │       ├── data.tf
 │       ├── main.tf
-│       └── outputs.tf
+│       ├── outputs.tf
+│       └── templates/                <- generated first-boot Ansible scripts
 └── clusters/
     ├── CLUSTER-PROD-01/              <- one folder = one independent state
     │   ├── main.tf                   <- thin root: reads JSON, calls the module
@@ -254,6 +255,69 @@ A machine **without** `os` keeps the original blank-VM behaviour. In that case
 of `iso_datastore_name` — do **not** use `[datastore] path` notation. Set
 `"iso_path": null` for a diskless-boot or PXE VM.
 
+## Optional first-boot Ansible bootstrap
+
+Every VM can optionally install **ansible-core** and run **ansible-pull** once on
+first boot. It is off by default. Configure defaults once in `cluster.json`, then
+override or disable them per machine in `machines/<NAME>.json`:
+
+```json
+// cluster.json
+"ansible": {
+  "enabled": true,
+  "repository": "https://github.com/example/ansible-playbooks.git",
+  "playbook": "site.yml",
+  "branch": "main",
+  "package_name": "ansible-core",
+  "install_packages": true,
+  "run_pull": true,
+  "extra_vars": { "environment": "prod" }
+}
+```
+
+```json
+// machines/prod-app-01.json
+"ansible": {
+  "enabled": true,
+  "playbook": "app.yml"
+}
+```
+
+Any field left out of a machine's `ansible` object inherits the cluster value.
+`"enabled": false` on a machine disables it even when the cluster enables it.
+Omitting `ansible` entirely also inherits the cluster setting.
+
+| Field | Default | Purpose |
+|---|---|---|
+| `enabled` | `false` | Enable/disable the bootstrap. |
+| `repository` | none | Git URL passed to `ansible-pull -U`. Required when enabled. |
+| `playbook` | `site.yml` | Playbook path inside the repository. |
+| `branch` | `main` | Git branch to pull. |
+| `directory` | `/opt/ansible-pull` or `C:\ansible-pull` | Working directory for the checkout. |
+| `requirements_file` | none | Optional Galaxy requirements file (`-r`). |
+| `extra_vars` | `{}` | Extra variables written to a JSON file and passed with `-e @file`. |
+| `package_name` | `ansible-core` | Package/pip name to install. |
+| `install_packages` | `true` | Install git, Python and `package_name` first. |
+| `run_pull` | `true` | Run `ansible-pull` after installing (set `false` to install only). |
+
+What Terraform generates:
+
+- **Cloned Linux VMs:** the bootstrap is injected into
+  `clone.customize.linux_options.script_text` and runs on first boot.
+- **Cloned Windows VMs:** the bootstrap is wrapped into a Sysprep
+  `run_once_command_list` command and runs once as local SYSTEM. Python must be
+  present on the template, or set `install_packages: false` when ansible-core is
+  already installed.
+- **Blank VMs (no `os`):** there is no guest customization to hook, so the
+  configuration and both bootstrap scripts are staged as base64 `guestinfo.*`
+  values on the VM. A guest with cloud-init/cloudbase-init can consume them, or
+  you can run the staged Linux/Windows script manually after installing the OS.
+
+Logs go to `/var/log/ansible-first-boot.log` (Linux) or
+`%TEMP%\ansible-first-boot.log` (Windows). The scripts are generated from
+[`modules/vsphere-cluster/templates/`](modules/vsphere-cluster/templates/) and
+need no extra pipeline or host-side download.
+
 ## OS images and VM provisioning
 
 Linux images come from <https://www.linuxvmimages.com/images/vmware/>. The site
@@ -390,8 +454,9 @@ No edits to the shared module are needed.
   broken apply or state lock is contained to one cluster.
 - **JSON as the source of truth.** Terraform reads the JSON files on every
   plan. Adding/removing a JSON file adds/removes that item without code changes.
-- **No templates.** VMs are created blank with a VMDK and optional ISO, are not
-  powered on, and have the guest waiters disabled.
+- **Machines without an OS stay blank.** They are created with a VMDK and
+  optional ISO, are not powered on, and have the guest waiters disabled. The
+  optional first-boot Ansible bootstrap is staged in `guestinfo.*` for them.
 - **Hosts are not created.** ESXi hosts must already exist in vCenter. Removing
   a host from `cluster.json` puts it into maintenance mode — remove hosts one
   at a time.

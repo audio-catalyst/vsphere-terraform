@@ -51,6 +51,19 @@
     }
   },
 
+  "ansible": {
+    "enabled": false,
+    "repository": "https://github.com/REPLACE-ME/ansible-playbooks.git",
+    "playbook": "site.yml",
+    "branch": "main",
+    "package_name": "ansible-core",
+    "install_packages": true,
+    "run_pull": true,
+    "extra_vars": {
+      "environment": "prod"
+    }
+  },
+
   "create_networks": true,
   "vds": {
     "name": "VDS-PROD-01",
