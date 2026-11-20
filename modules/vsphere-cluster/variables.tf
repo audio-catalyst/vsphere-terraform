@@ -44,8 +44,14 @@ variable "iso_datastore_name" {
   default     = null
 
   validation {
-    condition     = var.iso_datastore_name != null || alltrue([for m in var.machines : m.iso_path == null])
-    error_message = "iso_datastore_name must be set when at least one machine defines iso_path."
+    condition = var.iso_datastore_name != null || (
+      alltrue([for m in var.machines : m.iso_path == null]) &&
+      alltrue([
+        for name, m in var.machines :
+        !(try(var.machine_images[name].kind, null) == "windows" && try(m.vmtools.enabled, try(var.cluster.vmtools.enabled, false)))
+      ])
+    )
+    error_message = "iso_datastore_name must be set when a machine defines iso_path or when VMware Tools installation is enabled for a Windows clone."
   }
 }
 
@@ -150,6 +156,16 @@ variable "cluster" {
       package_name      = optional(string, "ansible-core")
       install_packages  = optional(bool, true)
       run_pull          = optional(bool, true)
+    }), {})
+
+    # Windows clone settings: install VMware Tools from an ISO on the ISO
+    # datastore and upgrade Tools automatically at each power cycle.
+    # Omit this object entirely to leave Windows VMs untouched.
+    vmtools = optional(object({
+      enabled        = optional(bool, true)
+      iso_path       = optional(string, null)
+      installer_args = optional(string, "/S /v\"/qn REBOOT=ReallySuppress\"")
+      upgrade_policy = optional(string, "upgradeAtPowerCycle")
     }), {})
   })
 
@@ -258,6 +274,11 @@ variable "cluster" {
     condition     = !var.cluster.ansible.enabled || length(trimspace(try(var.cluster.ansible.repository, ""))) > 0
     error_message = "cluster.ansible.enabled requires a non-empty ansible.repository URL."
   }
+
+  validation {
+    condition     = contains(["manual", "upgradeAtPowerCycle"], try(var.cluster.vmtools.upgrade_policy, "upgradeAtPowerCycle"))
+    error_message = "cluster.vmtools.upgrade_policy must be manual or upgradeAtPowerCycle."
+  }
 }
 
 # =============================================================================
@@ -345,6 +366,14 @@ variable "machines" {
       package_name      = optional(string, null)
       install_packages  = optional(bool, null)
       run_pull          = optional(bool, null)
+    }), null)
+
+    # Per-VM override of VMware Tools installation for Windows clones.
+    vmtools = optional(object({
+      enabled        = optional(bool, null)
+      iso_path       = optional(string, null)
+      installer_args = optional(string, null)
+      upgrade_policy = optional(string, null)
     }), null)
   }))
 

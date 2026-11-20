@@ -1,0 +1,1 @@
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "& { $p = Join-Path $env:TEMP 'vmtools-first-boot.ps1'; [IO.File]::WriteAllText($p, [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${script_b64}'))); & $p }"

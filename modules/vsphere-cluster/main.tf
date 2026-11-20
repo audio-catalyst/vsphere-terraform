@@ -132,6 +132,62 @@ locals {
     })
   }
 
+  # --- Windows VMware Tools -------------------------------------------------
+  vmtools_defaults = try(var.cluster.vmtools, {})
+
+  is_windows_machine = {
+    for name, machine in var.machines : name =>
+    try(local.image_lookup[name].kind, "linux") == "windows"
+  }
+
+  vmtools_effective = {
+    for name, machine in var.machines : name => {
+      enabled = try(machine.vmtools.enabled, null) != null ? machine.vmtools.enabled : try(local.vmtools_defaults.enabled, false)
+
+      iso_path = try(machine.vmtools.iso_path, null) != null ? machine.vmtools.iso_path : try(local.vmtools_defaults.iso_path, null)
+
+      installer_args = try(machine.vmtools.installer_args, null) != null ? machine.vmtools.installer_args : try(
+        local.vmtools_defaults.installer_args, "/S /v\"/qn REBOOT=ReallySuppress\""
+      )
+
+      upgrade_policy = try(machine.vmtools.upgrade_policy, null) != null ? machine.vmtools.upgrade_policy : try(
+        local.vmtools_defaults.upgrade_policy, "upgradeAtPowerCycle"
+      )
+    }
+  }
+
+  vmtools_windows_scripts = {
+    for name, config in local.vmtools_effective : name => templatefile("${path.module}/templates/vmtools-windows.ps1.tpl", {
+      installer_args_b64 = base64encode(config.installer_args)
+    })
+  }
+
+  vmtools_windows_run_once = {
+    for name, script in local.vmtools_windows_scripts : name => templatefile("${path.module}/templates/vmtools-windows-run-once.tpl", {
+      script_b64 = base64encode(script)
+    })
+  }
+
+  # Tools first, then Ansible. Both run once during Windows Sysprep.
+  windows_first_boot_commands = {
+    for name, config in local.vmtools_effective : name => concat(
+      local.is_windows_machine[name] && config.enabled ? [local.vmtools_windows_run_once[name]] : [],
+      local.is_windows_machine[name] && local.ansible_effective[name].enabled ? [local.ansible_windows_run_once[name]] : []
+    )
+  }
+
+  # Cloned Windows VMs mount the Tools ISO; blank VMs keep their legacy ISO.
+  cdrom_specs = {
+    for name, machine in var.machines : name =>
+    contains(keys(local.template_names), name) ? (
+      local.is_windows_machine[name] && local.vmtools_effective[name].enabled ? {
+        path = local.vmtools_effective[name].iso_path
+      } : null
+      ) : (
+      machine.iso_path != null ? { path = machine.iso_path } : null
+    )
+  }
+
   # Guest customisation for clones. A static address is applied to the first
   # NIC only; additional NICs use DHCP.
   customize_specs = {
@@ -192,6 +248,19 @@ check "ansible_configuration" {
       )
     ])
     error_message = "Every VM with Ansible enabled needs a non-empty repository, playbook, branch and package_name."
+  }
+}
+
+check "vmtools_configuration" {
+  assert {
+    condition = alltrue([
+      for name, config in local.vmtools_effective :
+      !local.is_windows_machine[name] || !config.enabled || (
+        config.iso_path != null && length(trimspace(config.iso_path)) > 0 &&
+        contains(["manual", "upgradeAtPowerCycle"], config.upgrade_policy)
+      )
+    ])
+    error_message = "Windows VMs with VMware Tools enabled need a non-empty vmtools.iso_path and a valid upgrade_policy."
   }
 }
 
@@ -310,23 +379,35 @@ resource "vsphere_virtual_machine" "machine" {
   guest_id   = local.guest_ids[each.key]
   annotation = each.value.annotation
 
+  # "Upgrade VMware Tools before each power on" for Windows clones.
+  tools_upgrade_policy = local.is_windows_machine[each.key] && local.vmtools_effective[each.key].enabled ? local.vmtools_effective[each.key].upgrade_policy : null
+
   # Staged for every VM, including blank ones: cloud-init/cloudbase-init can
   # consume these guestinfo values, and the scripts can also be run manually.
-  extra_config = local.ansible_effective[each.key].enabled ? {
-    "guestinfo.ansible.enabled"           = "true"
-    "guestinfo.ansible.repository"        = base64encode(local.ansible_repository[each.key])
-    "guestinfo.ansible.playbook"          = base64encode(local.ansible_effective[each.key].playbook)
-    "guestinfo.ansible.branch"            = base64encode(local.ansible_effective[each.key].branch)
-    "guestinfo.ansible.directory.linux"   = base64encode(local.ansible_linux_directory[each.key])
-    "guestinfo.ansible.directory.windows" = base64encode(local.ansible_windows_directory[each.key])
-    "guestinfo.ansible.requirements"      = base64encode(local.ansible_requirements[each.key])
-    "guestinfo.ansible.extra_vars"        = base64encode(local.ansible_json[each.key])
-    "guestinfo.ansible.package"           = base64encode(local.ansible_effective[each.key].package_name)
-    "guestinfo.ansible.install_packages"  = local.ansible_effective[each.key].install_packages ? "true" : "false"
-    "guestinfo.ansible.run_pull"          = local.ansible_effective[each.key].run_pull ? "true" : "false"
-    "guestinfo.ansible.bootstrap.linux"   = base64encode(local.ansible_linux_scripts[each.key])
-    "guestinfo.ansible.bootstrap.windows" = base64encode(local.ansible_windows_scripts[each.key])
-  } : {}
+  extra_config = merge(
+    local.ansible_effective[each.key].enabled ? {
+      "guestinfo.ansible.enabled"           = "true"
+      "guestinfo.ansible.repository"        = base64encode(local.ansible_repository[each.key])
+      "guestinfo.ansible.playbook"          = base64encode(local.ansible_effective[each.key].playbook)
+      "guestinfo.ansible.branch"            = base64encode(local.ansible_effective[each.key].branch)
+      "guestinfo.ansible.directory.linux"   = base64encode(local.ansible_linux_directory[each.key])
+      "guestinfo.ansible.directory.windows" = base64encode(local.ansible_windows_directory[each.key])
+      "guestinfo.ansible.requirements"      = base64encode(local.ansible_requirements[each.key])
+      "guestinfo.ansible.extra_vars"        = base64encode(local.ansible_json[each.key])
+      "guestinfo.ansible.package"           = base64encode(local.ansible_effective[each.key].package_name)
+      "guestinfo.ansible.install_packages"  = local.ansible_effective[each.key].install_packages ? "true" : "false"
+      "guestinfo.ansible.run_pull"          = local.ansible_effective[each.key].run_pull ? "true" : "false"
+      "guestinfo.ansible.bootstrap.linux"   = base64encode(local.ansible_linux_scripts[each.key])
+      "guestinfo.ansible.bootstrap.windows" = base64encode(local.ansible_windows_scripts[each.key])
+    } : {},
+    local.is_windows_machine[each.key] && local.vmtools_effective[each.key].enabled ? {
+      "guestinfo.vmtools.enabled"           = "true"
+      "guestinfo.vmtools.iso_path"          = base64encode(local.vmtools_effective[each.key].iso_path == null ? "" : local.vmtools_effective[each.key].iso_path)
+      "guestinfo.vmtools.installer_args"    = base64encode(local.vmtools_effective[each.key].installer_args)
+      "guestinfo.vmtools.upgrade_policy"    = local.vmtools_effective[each.key].upgrade_policy
+      "guestinfo.vmtools.bootstrap.windows" = base64encode(local.vmtools_windows_scripts[each.key])
+    } : {}
+  )
 
   # Clones inherit firmware, SCSI controller and hardware version from their
   # template; those settings only apply to the legacy blank-VM path.
@@ -371,7 +452,7 @@ resource "vsphere_virtual_machine" "machine" {
             content {
               computer_name         = local.customize_specs[each.key].hostname
               admin_password        = var.windows_admin_password
-              run_once_command_list = local.ansible_effective[each.key].enabled ? [local.ansible_windows_run_once[each.key]] : null
+              run_once_command_list = length(local.windows_first_boot_commands[each.key]) > 0 ? local.windows_first_boot_commands[each.key] : null
             }
           }
 
@@ -392,10 +473,10 @@ resource "vsphere_virtual_machine" "machine" {
   }
 
   dynamic "cdrom" {
-    for_each = each.value.iso_path == null || contains(keys(local.template_names), each.key) ? [] : [1]
+    for_each = local.cdrom_specs[each.key] == null ? [] : [1]
     content {
       datastore_id = data.vsphere_datastore.iso[0].id
-      path         = each.value.iso_path
+      path         = local.cdrom_specs[each.key].path
     }
   }
 

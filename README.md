@@ -50,7 +50,7 @@ vsphere-terraform/
 │       ├── data.tf
 │       ├── main.tf
 │       ├── outputs.tf
-│       └── templates/                <- generated first-boot Ansible scripts
+│       └── templates/                <- generated first-boot scripts (Ansible, VMware Tools)
 └── clusters/
     ├── CLUSTER-PROD-01/              <- one folder = one independent state
     │   ├── main.tf                   <- thin root: reads JSON, calls the module
@@ -317,6 +317,47 @@ Logs go to `/var/log/ansible-first-boot.log` (Linux) or
 `%TEMP%\ansible-first-boot.log` (Windows). The scripts are generated from
 [`modules/vsphere-cluster/templates/`](modules/vsphere-cluster/templates/) and
 need no extra pipeline or host-side download.
+
+## VMware Tools on Windows VMs
+
+Windows clones can install VMware Tools on first boot and use the vSphere
+**"Check and upgrade VMware Tools at power on"** flag. Add a `vmtools` object to
+`cluster.json`; omitting it leaves Windows VMs untouched:
+
+```json
+"vmtools": {
+  "enabled": true,
+  "iso_path": "vmware-tools/windows.iso",
+  "installer_args": "/S /v\"/qn REBOOT=ReallySuppress\"",
+  "upgrade_policy": "upgradeAtPowerCycle"
+}
+```
+
+| Field | Default | Purpose |
+|---|---|---|
+| `enabled` | `true` when `vmtools` is present | Enable installation and the upgrade flag. |
+| `iso_path` | none | VMware Tools Windows ISO, relative to `iso_datastore_name`. Required when enabled for a Windows clone. |
+| `installer_args` | `/S /v"/qn REBOOT=ReallySuppress"` | Silent installer arguments. |
+| `upgrade_policy` | `upgradeAtPowerCycle` | `upgradeAtPowerCycle` checks/upgrades on power-on; `manual` disables automatic upgrade. |
+
+Terraform attaches the ISO as a CD-ROM to each Windows clone. On first boot a
+PowerShell script finds `setup64.exe`/`setup.exe` on any CD/DVD drive and runs
+it silently, then the optional Ansible bootstrap runs. The installer log is
+`%TEMP%\vmtools-first-boot.log` and exit code `3010` (reboot required) is
+accepted. Plan for a reboot if your installer arguments suppress it.
+
+Machines can override or disable this in `machines/<NAME>.json`:
+
+```json
+"vmtools": {
+  "enabled": true,
+  "iso_path": "vmware-tools/windows-12.5.iso"
+}
+```
+
+Only cloned VMs with `os: "windows"` (or a Windows `kind` in
+`images/catalog.json`) are affected. Blank VMs have no first-boot hook, so they
+do not get the CD-ROM or upgrade flag.
 
 ## OS images and VM provisioning
 

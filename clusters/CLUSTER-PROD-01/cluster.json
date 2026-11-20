@@ -64,6 +64,13 @@
     }
   },
 
+  "vmtools": {
+    "enabled": true,
+    "iso_path": "vmware-tools/windows.iso",
+    "installer_args": "/S /v\"/qn REBOOT=ReallySuppress\"",
+    "upgrade_policy": "upgradeAtPowerCycle"
+  },
+
   "create_networks": true,
   "vds": {
     "name": "VDS-PROD-01",
